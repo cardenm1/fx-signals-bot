@@ -1,27 +1,22 @@
-name: Send Signal to Telegram
-
+name: Send Signal
 on:
-workflow_dispatch: # Это позволит запускать вручную кнопкой
-schedule:
-- cron: '0 * * * *' # Запускать каждый час (в 0 минут)
-
+  workflow_dispatch:
+  schedule:
+    - cron: '0 * * * *'
 jobs:
-send-signal-job:
-runs-on: ubuntu-latest
-steps:
-- name: Checkout repository
-uses: actions/checkout@v4
-
-- name: Set up Python
-uses: actions/setup-python@v5
-with:
-python-version: '3.11'
-
-- name: Install dependencies
-run: pip install requests
-
-- name: Run bot script
-env:
-TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-run: python bot.py
+  send-signal-job:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: python -m pip install requests
+      - name: Run bot script
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python bot.py
