@@ -93,7 +93,7 @@ def check_pair(name, ticker):
     print(f"[{name}] СИГНАЛ ОТПРАВЛЕН: {side_txt}")
 
 if __name__ == "__main__":
-    for name, ticker in PAIRS.items():
+    send_message(wait)
         try:
             check_pair(name, ticker)
         except Exception as e:
