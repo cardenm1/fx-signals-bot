@@ -91,9 +91,8 @@ def check_pair(name, ticker):
     )
     send_message(text)
     print(f"[{name}] СИГНАЛ ОТПРАВЛЕН: {side_txt}")
-
 if __name__ == "__main__":
-    for name, ticker in PAIRS.items():
+    send_message("🔔 Бот на связи. Жду сигналов.")
         try:
             check_pair(name, ticker)
         except Exception as e:
