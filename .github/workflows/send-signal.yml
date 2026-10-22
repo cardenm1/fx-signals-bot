@@ -22,8 +22,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install dependencies
-        run: pip install python-telegram-bot==22.5
+  
 
       - name: Run monitor
         env:
