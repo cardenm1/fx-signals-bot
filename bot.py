@@ -1,43 +1,77 @@
 
 import asyncio
-import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import dukascopy_python
 from dukascopy_python.instruments import INSTRUMENT_FX_MAJORS_GBP_USD
-from telegram import Bot
 
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+INSTRUMENT = INSTRUMENT_FX_MAJORS_GBP_USD
+
+
+def load_candles(side, start, end):
+    return dukascopy_python.fetch(
+        instrument=INSTRUMENT,
+        interval=dukascopy_python.INTERVAL_MIN_5,
+        offer_side=side,
+        start=start,
+        end=end,
+    )
 
 
 async def main():
-    now = datetime.now(timezone.utc)
-    print("Checking Dukascopy GBP/USD data")
-    print("UTC:", now.isoformat())
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(hours=3)
 
-    try:
-        data = dukascopy_python.fetch(
-            instrument=INSTRUMENT_FX_MAJORS_GBP_USD,
-            interval=dukascopy_python.INTERVAL_MIN_5,
-            offer_side=dukascopy_python.OFFER_SIDE_BID,
-            start=now.replace(hour=0, minute=0, second=0, microsecond=0),
-            end=now,
-        )
+    print("GBP/USD BID/ASK CHECK")
+    print("UTC:", end.isoformat())
 
-        print("Candles received:", len(data))
-        if data.empty:
-            print("No candles available")
-            return
+    bid = load_candles(
+        dukascopy_python.OFFER_SIDE_BID,
+        start,
+        end,
+    )
 
-        print("Latest candles:")
-        print(data.tail(3).to_string())
+    ask = load_candles(
+        dukascopy_python.OFFER_SIDE_ASK,
+        start,
+        end,
+    )
 
-    except Exception as error:
-        print("Dukascopy error:", repr(error))
-        raise
+    print("BID candles:", len(bid))
+    print("ASK candles:", len(ask))
 
-    print("Data connection test completed")
+    if bid.empty or ask.empty:
+        raise RuntimeError("Missing BID or ASK data")
+
+    common = bid.index.intersection(ask.index)
+
+    if common.empty:
+        raise RuntimeError("BID/ASK timestamps do not match")
+
+    last_time = common.max()
+    bid_close = float(bid.loc[last_time, "close"])
+    ask_close = float(ask.loc[last_time, "close"])
+
+    spread = (ask_close - bid_close) * 10000
+
+    print("Last candle UTC:", last_time)
+    print("BID close:", bid_close)
+    print("ASK close:", ask_close)
+    print("Spread pips:", round(spread, 2))
+
+    if spread < 0:
+        raise RuntimeError("Negative spread detected")
+
+    age_minutes = (
+        end - last_time.to_pydatetime()
+    ).total_seconds() / 60
+
+    print("Candle age minutes:", round(age_minutes, 1))
+
+    if age_minutes > 20:
+        print("WARNING: Market data may be stale")
+
+    print("BID/ASK check completed")
 
 
 if __name__ == "__main__":
