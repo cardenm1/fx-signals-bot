@@ -1,9 +1,9 @@
 """Reproduce original GBPUSD research signals from yearlong BID/ASK CSVs.
-Run in Google Colab after mounting Drive. This is NOT a live alert bot.
+Run from a folder containing GBPUSD_BID_M5_CLEAN.csv and GBPUSD_ASK_M5_CLEAN.csv. This is NOT a live alert bot.
 """
 from pathlib import Path
 import pandas as pd
-folder = Path('/content/drive/MyDrive/GBPUSD_Research')
+folder = Path(__file__).resolve().parent
 def read_side(side):
     f=folder / f'GBPUSD_{side}_M5_CLEAN.csv'
     if not f.exists():
