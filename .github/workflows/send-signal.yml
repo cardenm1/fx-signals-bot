@@ -1,11 +1,16 @@
 
-name: GBPUSD Telegram Test
+name: GBPUSD Signal Monitor
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
+
+permissions:
+  contents: read
 
 jobs:
-  send-message:
+  monitor:
     runs-on: ubuntu-latest
 
     steps:
@@ -17,10 +22,10 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install Telegram library
+      - name: Install dependencies
         run: pip install python-telegram-bot==22.5
 
-      - name: Send Telegram message
+      - name: Run monitor
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
