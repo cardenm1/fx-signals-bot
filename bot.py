@@ -1,25 +1,22 @@
 
-import os
 import asyncio
 from datetime import datetime, timedelta, timezone
 
 import dukascopy_python as duka
 from dukascopy_python.instruments import (
-    INSTRUMENT_FX_MAJORS_GBP_USD
+    INSTRUMENT_FX_MAJORS_GBP_USD,
 )
-from telegram import Bot
-
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 PIP = 0.0001
+MAX_DATA_AGE_MINUTES = 20
 
 
 def get_market_data():
     now = datetime.now(timezone.utc)
-
-    # Fetch recent BID and ASK candles
     start = now - timedelta(hours=3)
+
+    print("GBP/USD MARKET MONITOR")
+    print("UTC:", now.isoformat())
 
     bid = duka.fetch(
         instrument=INSTRUMENT_FX_MAJORS_GBP_USD,
@@ -38,26 +35,27 @@ def get_market_data():
     )
 
     if bid.empty or ask.empty:
-        raise RuntimeError("No market data")
+        raise RuntimeError("Missing BID or ASK data")
 
     common = bid.index.intersection(ask.index)
 
-    # Only completed 5-minute candles
     completed = [
         t for t in common
         if t.to_pydatetime() + timedelta(minutes=5) <= now
     ]
 
     if not completed:
-        raise RuntimeError("No completed M5 candles")
+        print("No completed M5 candles")
+        return None
 
     candle_time = max(completed)
 
-    # Avoid stale data, including weekends
-    age = (now - candle_time.to_pydatetime()).total_seconds()
+    age_minutes = (
+        now - candle_time.to_pydatetime()
+    ).total_seconds() / 60
 
-    if age > 20 * 60:
-        print("Market data stale. Skipping.")
+    if age_minutes > MAX_DATA_AGE_MINUTES:
+        print("Market data is stale")
         return None
 
     bid_close = float(bid.loc[candle_time, "close"])
@@ -66,7 +64,12 @@ def get_market_data():
     spread = (ask_close - bid_close) / PIP
 
     if spread < 0:
-        raise RuntimeError("Negative spread")
+        raise RuntimeError("Negative spread detected")
+
+    print("Last M5 candle:", candle_time)
+    print("BID:", round(bid_close, 5))
+    print("ASK:", round(ask_close, 5))
+    print("Spread:", round(spread, 2), "pips")
 
     return {
         "time": candle_time,
@@ -77,36 +80,18 @@ def get_market_data():
 
 
 async def main():
-    if not TOKEN or not CHAT_ID:
-        raise RuntimeError("Telegram secrets missing")
-
     data = get_market_data()
 
     if data is None:
+        print("No fresh market data")
         return
 
-    candle_time = data["time"].strftime(
-        "%d/%m/%Y %H:%M UTC"
-    )
+    # Strategy is not connected yet.
+    # No BUY/SELL signals are generated.
+    # No Telegram messages are sent.
 
-    message = (
-        "GBP/USD LIVE MARKET\n\n"
-        f"M5 candle: {candle_time}\n"
-        f"BID: {data['bid']:.5f}\n"
-        f"ASK: {data['ask']:.5f}\n"
-        f"Spread: {data['spread']:.2f} pips\n\n"
-        "Mode: PAPER TRADING\n"
-        "Status: Market data only\n"
-        "BUY/SELL signals: Not enabled"
-    )
-
-    async with Bot(token=TOKEN) as bot:
-        await bot.send_message(
-            chat_id=CHAT_ID,
-            text=message,
-        )
-
-    print("Market update sent to Telegram")
+    print("Market data received successfully")
+    print("Waiting for strategy integration")
 
 
 if __name__ == "__main__":
