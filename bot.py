@@ -1,83 +1,143 @@
 
-import asyncio
-import json
 import os
+import json
+import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import dukascopy_python as duka
-from dukascopy_python.instruments import (
-    INSTRUMENT_FX_MAJORS_GBP_USD,
-)
 from telegram import Bot
+
+# ==========================================
+# CONFIGURATION
+# ==========================================
 
 TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
+PAIRS = {
+    "GBP/USD": {
+        "instrument": "INSTRUMENT_FX_MAJORS_GBP_USD",
+        "pip": 0.0001,
+    },
+    "GBP/JPY": {
+        "instrument": "INSTRUMENT_FX_MAJORS_GBP_JPY",
+        "pip": 0.01,
+    },
+    "EUR/JPY": {
+        "instrument": "INSTRUMENT_FX_MAJORS_EUR_JPY",
+        "pip": 0.01,
+    },
+}
+
+RR = 2.0
+MIN_SL_PIPS = 5
+MAX_SL_PIPS = 30
+MAX_SPREAD_PIPS = 2
+HISTORY_DAYS = 5
+PIVOT_BARS = 2
 STATE_FILE = Path("signal_state.json")
-PIP = 0.0001
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
+)
 
-def fetch_data():
-    now = datetime.now(timezone.utc)
-    start = now - timedelta(days=5)
+# ==========================================
+# STATE
+# ==========================================
 
-    def fetch(side):
-        df = duka.fetch(
-            instrument=INSTRUMENT_FX_MAJORS_GBP_USD,
-            interval=duka.INTERVAL_MIN_5,
-            offer_side=side,
-            start=start,
-            end=now,
-        )
-        df.index = pd.to_datetime(df.index, utc=True)
-        return df.sort_index()
+def load_state():
+    if STATE_FILE.exists():
+        try:
+            return json.loads(STATE_FILE.read_text())
+        except (ValueError, OSError):
+            pass
+    return {}
 
-    bid = fetch(duka.OFFER_SIDE_BID)
-    ask = fetch(duka.OFFER_SIDE_ASK)
+def save_state(state):
+    STATE_FILE.write_text(
+        json.dumps(state, indent=2)
+    )
 
-    common = bid.index.intersection(ask.index)
+# ==========================================
+# MARKET DATA
+# ==========================================
 
-    # Use only completed candles.
-    valid = [
-        t for t in common
-        if t.to_pydatetime() + timedelta(minutes=5) <= now
+def get_data(instrument_name, side):
+    instrument = getattr(
+        duka.instruments, instrument_name
+    )
+
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=HISTORY_DAYS)
+
+    df = duka.fetch(
+        instrument=instrument,
+        interval=duka.INTERVAL_MIN_5,
+        offer_side=side,
+        start=start,
+        end=end,
+    )
+
+    if df is None or df.empty:
+        raise ValueError("No market data")
+
+    df = df.copy()
+
+    df.columns = [
+        str(c).lower() for c in df.columns
     ]
 
-    if not valid:
-        raise RuntimeError("No completed M5 candles")
+    if "timestamp" in df.columns:
+        df = df.set_index("timestamp")
 
-    bid = bid.loc[valid].copy()
-    ask = ask.loc[valid].copy()
+    df.index = pd.to_datetime(
+        df.index, utc=True
+    )
 
-    if len(bid) < 200:
-        raise RuntimeError("Insufficient M5 history")
+    df = df.sort_index()
+    df = df[~df.index.duplicated(keep="last")]
 
-    last_time = bid.index[-1]
-    age = (now - last_time.to_pydatetime()).total_seconds() / 60
+    required = ["open", "high", "low", "close"]
 
-    if age > 20:
-        print("Stale market data. No signal.")
-        return None, None
+    for col in required:
+        if col not in df.columns:
+            raise ValueError(f"Missing column: {col}")
 
-    return bid, ask
+        df[col] = pd.to_numeric(
+            df[col], errors="coerce"
+        )
 
+    df = df.dropna(subset=required)
 
-def detect_signal(bid, ask):
-    # Build completed H1 candles.
-    h1 = bid.resample("1h").agg({
+    # Only completed M5 candles
+    cutoff = pd.Timestamp.now(tz="UTC").floor("5min")
+    df = df[df.index < cutoff]
+
+    return df
+
+# ==========================================
+# H1 TREND
+# ==========================================
+
+def get_trend(m5):
+    h1 = m5.resample(
+        "1h", label="left", closed="left"
+    ).agg({
         "open": "first",
         "high": "max",
         "low": "min",
         "close": "last",
-    })
+    }).dropna()
 
-    counts = bid["close"].resample("1h").count()
-    h1 = h1[counts == 12].dropna()
+    cutoff = pd.Timestamp.now(tz="UTC").floor("1h")
+    h1 = h1[h1.index < cutoff]
 
-    if len(h1) < 55:
-        print("Insufficient completed H1 history")
+    if len(h1) < 50:
         return None
 
     h1["ema20"] = h1["close"].ewm(
@@ -88,177 +148,227 @@ def detect_signal(bid, ask):
         span=50, adjust=False
     ).mean()
 
-    trend = (
-        "BUY"
-        if h1["ema20"].iloc[-1] > h1["ema50"].iloc[-1]
-        else "SELL"
-    )
+    last = h1.iloc[-1]
 
-    # Confirmed M5 pivot: two candles on each side.
-    df = bid.copy()
+    if last["ema20"] > last["ema50"]:
+        return "BUY"
 
-    df["pivot_high"] = (
-        (df["high"] > df["high"].shift(1)) &
-        (df["high"] > df["high"].shift(2)) &
-        (df["high"] > df["high"].shift(-1)) &
-        (df["high"] > df["high"].shift(-2))
-    )
+    if last["ema20"] < last["ema50"]:
+        return "SELL"
 
-    df["pivot_low"] = (
-        (df["low"] < df["low"].shift(1)) &
-        (df["low"] < df["low"].shift(2)) &
-        (df["low"] < df["low"].shift(-1)) &
-        (df["low"] < df["low"].shift(-2))
-    )
+    return None
 
-    # Last completed M5 candle.
-    last = df.iloc[-1]
-    previous = df.iloc[-2]
+# ==========================================
+# CONFIRMED M5 PIVOTS
+# ==========================================
 
-    # A pivot is only available after two subsequent
-    # candles have completed.
-    confirmed = df.iloc[:-2]
+def get_pivots(df):
+    highs = df["high"].to_numpy()
+    lows = df["low"].to_numpy()
 
-    if len(confirmed) < 20:
+    pivot_highs = []
+    pivot_lows = []
+
+    n = PIVOT_BARS
+
+    for i in range(n, len(df) - n):
+        high_window = highs[i-n:i+n+1]
+        low_window = lows[i-n:i+n+1]
+
+        if highs[i] == max(high_window):
+            if np.sum(high_window == highs[i]) == 1:
+                pivot_highs.append(i)
+
+        if lows[i] == min(low_window):
+            if np.sum(low_window == lows[i]) == 1:
+                pivot_lows.append(i)
+
+    return pivot_highs, pivot_lows
+
+# ==========================================
+# SIGNAL ENGINE
+# ==========================================
+
+def analyze(pair, bid, ask, pip):
+    common = bid.index.intersection(ask.index)
+
+    bid = bid.loc[common].copy()
+    ask = ask.loc[common].copy()
+
+    if len(bid) < 100:
         return None
 
-    recent = confirmed.iloc[-48:]
+    # Avoid signals on old candles
+    age = (
+        pd.Timestamp.now(tz="UTC") - bid.index[-1]
+    ).total_seconds()
 
-    highs = recent[recent["pivot_high"]]
-    lows = recent[recent["pivot_low"]]
-
-    if highs.empty or lows.empty:
-        print("No confirmed pivots")
+    if age > 900:
         return None
 
-    resistance = float(highs["high"].iloc[-1])
-    support = float(lows["low"].iloc[-1])
+    trend = get_trend(bid)
+
+    if trend is None:
+        return None
+
+    pivot_highs, pivot_lows = get_pivots(bid)
+
+    if not pivot_highs or not pivot_lows:
+        return None
+
+    last_i = len(bid) - 1
+    last_bid = bid.iloc[-1]
+    last_ask = ask.iloc[-1]
 
     spread = (
-        float(ask["close"].iloc[-1]) -
-        float(bid["close"].iloc[-1])
-    ) / PIP
+        last_ask["close"] - last_bid["close"]
+    ) / pip
 
-    if spread < 0 or spread > 2:
-        print("Spread filter:", round(spread, 2))
+    if spread < 0 or spread > MAX_SPREAD_PIPS:
         return None
+
+    # Only pivots confirmed before signal candle
+    highs = [i for i in pivot_highs if i < last_i]
+    lows = [i for i in pivot_lows if i < last_i]
+
+    if not highs or not lows:
+        return None
+
+    last_high_i = highs[-1]
+    last_low_i = lows[-1]
+
+    swing_high = float(bid.iloc[last_high_i]["high"])
+    swing_low = float(bid.iloc[last_low_i]["low"])
+
+    previous_close = float(bid.iloc[-2]["close"])
+    current_close = float(last_bid["close"])
 
     direction = None
+    entry = None
+    stop = None
 
-    if (
-        trend == "BUY"
-        and previous["close"] <= resistance
-        and last["close"] > resistance
-    ):
-        direction = "BUY"
+    if trend == "BUY":
+        if (
+            previous_close <= swing_high
+            and current_close > swing_high
+        ):
+            direction = "BUY"
+            entry = float(last_ask["close"])
+            stop = swing_low
 
-    elif (
-        trend == "SELL"
-        and previous["close"] >= support
-        and last["close"] < support
-    ):
-        direction = "SELL"
+    elif trend == "SELL":
+        if (
+            previous_close >= swing_low
+            and current_close < swing_low
+        ):
+            direction = "SELL"
+            entry = float(last_bid["close"])
+            stop = swing_high + spread * pip
 
     if direction is None:
-        print("No confirmed signal")
         return None
 
-    entry = (
-        float(ask["close"].iloc[-1])
-        if direction == "BUY"
-        else float(bid["close"].iloc[-1])
-    )
+    risk = abs(entry - stop)
+    risk_pips = risk / pip
+
+    if not MIN_SL_PIPS <= risk_pips <= MAX_SL_PIPS:
+        return None
 
     if direction == "BUY":
-        stop = support
-        risk = entry - stop
-        target = entry + 2 * risk
+        if stop >= entry:
+            return None
+        target = entry + RR * risk
     else:
-        stop = resistance
-        risk = stop - entry
-        target = entry - 2 * risk
+        if stop <= entry:
+            return None
+        target = entry - RR * risk
 
-    risk_pips = risk / PIP
+    digits = 3 if pip == 0.01 else 5
 
-    if not 5 <= risk_pips <= 30:
-        print("Risk filter:", round(risk_pips, 2))
-        return None
-
-    candle_time = df.index[-1]
+    signal_time = bid.index[-1].isoformat()
 
     return {
-        "id": f"{candle_time.isoformat()}_{direction}",
-        "time": candle_time.isoformat(),
+        "pair": pair,
         "direction": direction,
-        "entry": round(entry, 5),
-        "stop": round(stop, 5),
-        "target": round(target, 5),
+        "entry": round(entry, digits),
+        "sl": round(stop, digits),
+        "tp": round(target, digits),
         "risk_pips": round(risk_pips, 1),
-        "spread": round(spread, 1),
+        "spread_pips": round(spread, 1),
+        "time": signal_time,
+        "id": f"{pair}:{direction}:{signal_time}",
     }
 
+# ==========================================
+# TELEGRAM
+# ==========================================
 
-def load_state():
-    if not STATE_FILE.exists():
-        return {"last_signal_id": None}
-
-    return json.loads(STATE_FILE.read_text())
-
-
-def save_state(signal_id):
-    STATE_FILE.write_text(
-        json.dumps(
-            {"last_signal_id": signal_id},
-            indent=2,
-        )
+def format_signal(s):
+    return (
+        "PAPER SIGNAL | DEMO\n\n"
+        f"Pair: {s['pair']}\n"
+        f"Direction: {s['direction']}\n\n"
+        f"Entry: {s['entry']}\n"
+        f"Stop Loss: {s['sl']}\n"
+        f"Take Profit: {s['tp']}\n\n"
+        f"Risk: {s['risk_pips']} pips\n"
+        f"Spread: {s['spread_pips']} pips\n"
+        f"Reward/Risk: 2:1\n\n"
+        "Strategy: H1 EMA20/50 + M5 BOS\n"
+        f"Signal candle UTC: {s['time']}\n\n"
+        "Demo testing only. Not an executed trade."
     )
 
+# ==========================================
+# MAIN
+# ==========================================
 
 async def main():
-    print("GBP/USD PAPER SIGNAL MONITOR")
-
-    bid, ask = fetch_data()
-
-    if bid is None:
-        return
-
-    print("Latest M5:", bid.index[-1])
-
-    signal = detect_signal(bid, ask)
-
-    if signal is None:
-        return
-
     state = load_state()
+    bot = Bot(token=TOKEN)
 
-    if state.get("last_signal_id") == signal["id"]:
-        print("Duplicate signal skipped")
-        return
+    for pair, config in PAIRS.items():
+        try:
+            logging.info("Checking %s", pair)
 
-    message = (
-        "GBP/USD — PAPER SIGNAL\n\n"
-        f"Direction: {signal['direction']}\n"
-        f"Time UTC: {signal['time']}\n"
-        f"Reference price: {signal['entry']}\n"
-        f"Stop Loss: {signal['stop']}\n"
-        f"Take Profit: {signal['target']}\n"
-        f"Risk distance: {signal['risk_pips']} pips\n"
-        f"Spread: {signal['spread']} pips\n"
-        "Risk/Reward: 1:2\n\n"
-        "Experimental signal only.\n"
-        "Not an executed trade."
-    )
+            bid = get_data(
+                config["instrument"],
+                duka.OFFER_SIDE_BID
+            )
 
-    async with Bot(TOKEN) as bot:
-        await bot.send_message(
-            chat_id=CHAT_ID,
-            text=message,
-        )
+            ask = get_data(
+                config["instrument"],
+                duka.OFFER_SIDE_ASK
+            )
 
-    save_state(signal["id"])
+            signal = analyze(
+                pair, bid, ask, config["pip"]
+            )
 
-    print("PAPER SIGNAL SENT:", signal["id"])
+            if signal is None:
+                logging.info("%s: no signal", pair)
+                continue
 
+            if state.get(pair) == signal["id"]:
+                logging.info("%s: duplicate", pair)
+                continue
+
+            await bot.send_message(
+                chat_id=CHAT_ID,
+                text=format_signal(signal)
+            )
+
+            state[pair] = signal["id"]
+            save_state(state)
+
+            logging.info("%s: signal sent", pair)
+
+        except Exception:
+            logging.exception(
+                "Error while checking %s", pair
+            )
+
+    logging.info("Finished checking all pairs")
 
 if __name__ == "__main__":
     asyncio.run(main())
