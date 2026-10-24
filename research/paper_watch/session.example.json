@@ -1,0 +1,15 @@
+{
+  "status": "PREPARED_NOT_STARTED",
+  "mode": "PAPER_ONLY",
+  "strategy": "frozen strict D1 structure / 2 reactions / H1 close / same-M5 sweep-return / fixed BOS",
+  "evaluation_start": "Set at approved init: max(next M5 boundary, 2026-10-24T00:00:00Z)",
+  "historical_prices": "Warmup only, never include old signals in forward journals",
+  "execution": "5-minute delay; first fresh quote observed after due; one position; structural sweep SL; TP 2R",
+  "extra_slippage_pips": 0,
+  "source_max_quote_age_seconds": 30,
+  "entry_lateness_deadline_seconds": 60,
+  "bar_finality_seconds": 2,
+  "auto_publication": false,
+  "telegram": false,
+  "broker_orders": false
+}
