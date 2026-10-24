@@ -1,0 +1,2 @@
+seq,event_id,observed_utc,event_utc,kind,payload_json,prev_hash,hash,signal_id,direction,D1_level,entry,SL,TP,spread_pips,R,reason
+2,bca44566aa45357832380b7285a72a4deb3ca2605b77aff89cb43f1ecfbbb0cb,2026-10-24T14:02:40.378695+00:00,2026-10-24T14:02:40.378695+00:00,MARKET_CLOSED,"{""reason"":""EXPECTED_WEEKEND_NY_17""}",488d8d86d65ff984d68fb118fb16f27b86e4bb8fae3a6bace94e95d720d6effb,6908bc6cdbd13f7f0b58baa7e97bb1c4f963e5f64466616f32b76a8cc482f768,,,,,,,,,EXPECTED_WEEKEND_NY_17
