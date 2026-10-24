@@ -1,0 +1,11 @@
+{
+  "version": "GBPUSD-Strategy-v1.0",
+  "mode": "SIGNAL_ONLY",
+  "created_utc": "2026-10-24T13:47:11.365316+00:00",
+  "release_hash": "2a5281a7490ea1daf564ab707bd50833480294a6268859610405f1a19c77fd63",
+  "frozen_model": {
+    "recognize.py": "fa8c5d24d972316d885760f63ce91666f71f2fe10f3b8cc94d26679e4ca040b9",
+    "recognition_plan.json": "580a02ffe8e7a0ec2999fe041a3e7154b313223ef5a8ed47c2b135087adc5fa9"
+  },
+  "telegram_default": false
+}
