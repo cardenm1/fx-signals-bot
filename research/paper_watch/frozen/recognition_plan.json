@@ -1,0 +1,115 @@
+{
+  "stage": "RECOGNITION_AND_VISUAL_APPROVAL_ONLY",
+  "phase3_authorized": false,
+  "branch": "research/gbpusd-d1-h1-m5-model",
+  "d1_boundary": "00:00-00:00 UTC confirmed by user",
+  "short_days": "Keep Sunday/Friday UTC candles separately. Expected active M5 grid uses conventional Sunday17-Friday17 America/New_York Forex week with DST solely for data completeness. Missing active quotes invalidate D1. Holidays with unknown closure are conservatively invalid.",
+  "d1_pivots": "Strict 2-left/2-right unique extrema, five valid consecutive expected-active D1 candles. Pivot known only after second right D1 close. No confirmation across invalid days.",
+  "d1_trend": "Structure: latest two confirmed highs and latest two confirmed lows both rise=BUY, both fall=SELL, else neutral. EMA220: last closed valid D1 close above/below EMA220 after >=220 valid D1 bars. Intersection requires agreement. Latest expected-active closed D1 must be valid.",
+  "ema_limitation": "One year is short for EMA220; min220 is availability only, not evidence of seed convergence. No prehistory invented.",
+  "levels": "User selected first confirmed D1 swing then closed-D1 touch/rejection reactions. Zone fixed at seed price +/-0.20 ATR14 at confirmation. Later valid D1 intersects zone and closes strictly below lower edge for high resistance, above upper edge for low support. Reactions >=3 expected-active D1 bars apart, only after seed confirmation. Matching confirmed swings do not themselves increment count. Important from second/third reaction close. Numerical touch/separation rules provisional for visual approval.",
+  "level_lifetime": "Track age from first pivot in expected-active D1 bars. Expire after 60 (alternative20). Close beyond far band invalidates level for NEW H1 contexts. Existing confirmed H1 context retains frozen snapshot. No reaction count is backdated.",
+  "h1": "Only complete 12-M5 hours, contiguous current/previous H1. Trend and level must be known by H1 OPEN. BUY far edge=anchor+tolerance, SELL=anchor-tolerance. Breach buffer=0.05 lagged H1 ATR14. Wick: previous close inside and high/low beyond; recognized only after H1 close. Close: previous close inside and close beyond. Retest: close variant then 1..6 subsequent contiguous H1 touches band and closes again beyond far edge.",
+  "m5": "Context lifetime 6 actual hours after H1 confirmation, continuous available M5; daily trend rechecked at signal. Local pivots strict2-left2-right, known before candidate M5 OPEN; freeze opposite BOS pivot at sweep. BUY sweeps local low then returns above, later closes above local high; SELL mirrored. Sweep buffer0.1 lagged M5 ATR14, BOS buffer0.05. BOS strictly after return bar; no OHLC intrabar-order assumption.",
+  "return_windows": "0: return in sweep candle. 1/2/3: first return 1..N subsequent continuous M5, excluding same-bar return. Nested late windows overlap; counts not independent.",
+  "simplified": "First close crossing latest already confirmed local structure after H1 confirmation; no sweep requirement.",
+  "contexts": "One H1 setup per level/direction/UTC day per H1 mode; first M5 confirmation per context/model. No maximum distance-to-daily-level filter yet; distance shown for visual approval.",
+  "configs": {
+    "reference": {
+      "trend": "structure",
+      "reactions": 2,
+      "age": 60,
+      "h1": "close",
+      "m5": "strict",
+      "return_max": 0
+    },
+    "trend_ema220": {
+      "trend": "ema220",
+      "reactions": 2,
+      "age": 60,
+      "h1": "close",
+      "m5": "strict",
+      "return_max": 0
+    },
+    "trend_intersection": {
+      "trend": "intersection",
+      "reactions": 2,
+      "age": 60,
+      "h1": "close",
+      "m5": "strict",
+      "return_max": 0
+    },
+    "three_reactions": {
+      "trend": "structure",
+      "reactions": 3,
+      "age": 60,
+      "h1": "close",
+      "m5": "strict",
+      "return_max": 0
+    },
+    "young_level20": {
+      "trend": "structure",
+      "reactions": 2,
+      "age": 20,
+      "h1": "close",
+      "m5": "strict",
+      "return_max": 0
+    },
+    "h1_wick": {
+      "trend": "structure",
+      "reactions": 2,
+      "age": 60,
+      "h1": "wick",
+      "m5": "strict",
+      "return_max": 0
+    },
+    "h1_retest": {
+      "trend": "structure",
+      "reactions": 2,
+      "age": 60,
+      "h1": "retest",
+      "m5": "strict",
+      "return_max": 0
+    },
+    "m5_simple": {
+      "trend": "structure",
+      "reactions": 2,
+      "age": 60,
+      "h1": "close",
+      "m5": "simple",
+      "return_max": 0
+    },
+    "return_next1": {
+      "trend": "structure",
+      "reactions": 2,
+      "age": 60,
+      "h1": "close",
+      "m5": "strict",
+      "return_max": 1
+    },
+    "return_next2": {
+      "trend": "structure",
+      "reactions": 2,
+      "age": 60,
+      "h1": "close",
+      "m5": "strict",
+      "return_max": 2
+    },
+    "return_next3": {
+      "trend": "structure",
+      "reactions": 2,
+      "age": 60,
+      "h1": "close",
+      "m5": "strict",
+      "return_max": 3
+    }
+  },
+  "selection_examples": "Prefer reference then retest/wick/late-return/other strict configs, simplified only if fewer than five per direction. Chronological, one per date+level, no future PnL used. At least5 BUY+5 SELL if recognized examples exist. Never fabricate lacking examples.",
+  "charts": "Only D1/H1 candles closed at signal and M5 bars through signal. Pivot marks only if confirmed by signal. Candidate entry is signal-side quote close, not promised fill; no post-signal outcome plotted or evaluated.",
+  "data_timestamp": "UTC explicit; source bar-open semantics unverified and treated as a condition of all examples.",
+  "restricted_phase3": "No SL/TP optimization, returns, win rates, capital/risk/drawdown simulation or news filter evaluation until user visually confirms models. Future plan reserved: one virtual position,1000GBP,0.5%/1%risk,10%drawdown cap.",
+  "inputs": {
+    "BID": "475695a3a8dab85de989e72a131e7171966d2df97d879452ed9749e6265571a2",
+    "ASK": "baddd288bfba71c08e755f52e0931327b42f05ee4ac47b0fecdb0a5fd8dee42d"
+  }
+}
