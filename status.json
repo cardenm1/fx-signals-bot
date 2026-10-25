@@ -1,12 +1,12 @@
 {
   "version": "GBPUSD-Strategy-v1.0",
-  "status": "MARKET_CLOSED",
-  "observed_utc": "2026-10-25T20:49:10.363236+00:00",
+  "status": "OK",
+  "observed_utc": "2026-10-25T21:10:10.366304+00:00",
   "initial_M5_open": "2026-10-23T20:55:00+00:00",
-  "last_M5_open": "2026-10-23T20:55:00+00:00",
+  "last_M5_open": "2026-10-25T21:05:00+00:00",
   "initial_processed_M5": "2026-10-23T20:55:00+00:00",
-  "last_processed_M5": "2026-10-23T20:55:00+00:00",
-  "batches": 0,
+  "last_processed_M5": "2026-10-25T21:05:00+00:00",
+  "batches": 2,
   "signal_count": 0,
   "execution": "FORBIDDEN",
   "publication": "SEPARATE_DISABLED_BY_DEFAULT"
