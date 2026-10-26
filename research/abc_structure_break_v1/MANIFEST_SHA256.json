@@ -1,0 +1,18 @@
+{
+  ".github/workflows/abc-structure-break-author.yml": "9a51b16d18d99c549d29927fd746c2811da1f15b54f418c3102f6dc8de4294d1",
+  "research/abc_structure_break_v1/.gitignore": "c24d23ce759ddf6880d6269fd25f0abf44a462c17d974a752bb6078841019490",
+  "research/abc_structure_break_v1/README_ABC_AUTHOR_RU.md": "269ce5c2629f1b6f514244cb32380bb0c4032f48534a42c17b2c3dd4f23dfed6",
+  "research/abc_structure_break_v1/REPORT_RU.md": "def3801204e9c1589b3e17d10a8c6758664684f4b8e54613e35e9a736624c224",
+  "research/abc_structure_break_v1/abc_author/__init__.py": "f77f3f3e47049b96eefcdd45adf2a52579bbe1761bc119176d6438681e185428",
+  "research/abc_structure_break_v1/abc_author/backtest.py": "a658a6f6ba027e98a18c2a6bb56d44eb0251a2a96b5264a5b78f96d4a2647214",
+  "research/abc_structure_break_v1/abc_author/data.py": "16f9afb6d34d80ce9844023165982e7237b686d8445c7f05a9ab1754d7fb3f65",
+  "research/abc_structure_break_v1/abc_author/engine.py": "18c1a0b07bf1bdacbf710f432d2031a4fc6362f7029559fdf6722f336a0e7855",
+  "research/abc_structure_break_v1/abc_author/notify.py": "abc5b5a57d7c9865792de5db5367f532662681f47b31012c8f44fb1dd2406f47",
+  "research/abc_structure_break_v1/abc_author/research.py": "b9dcb176aa0ada94483df8e7e9ffe25cbd0178f20dbbf90bfcc6b9ed2b8241ef",
+  "research/abc_structure_break_v1/abc_author/telegram.py": "4d5e789102851ff10bf93fb0e2cc91055aa9cea974ed5d24d6a87e0dba3cf754",
+  "research/abc_structure_break_v1/abc_author/validate.py": "968802ac36e822eb0ef6137b29b327255e8d674aa50883aca3180c4fc0eb0b8b",
+  "research/abc_structure_break_v1/requirements-abc-author.txt": "50bd36afe0a4a4950f51db01fddfedc5d16814a1664c8a21a02e7c247b481bda",
+  "research/abc_structure_break_v1/tests_author/test_engine.py": "eb1d3169e2909eeda3d1ca92e9f9446e5167b9c18ebc67bd80d49c4e08b3b5b6",
+  "research/abc_structure_break_v1/tests_author/test_notifications.py": "dde5dbbaa5b28b1c2a2edd80897647ac76d6525047ad988b6768f53caeaaa948",
+  "research/abc_structure_break_v1/tests_author/test_telegram_transport.py": "c708249c2cfae273f42582bca0316cf73524942fab62e235faa937de9ab85ac4"
+}
