@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.env
+.env.*
+abc_author_state/
+abc_author_data/
+abc_author_results/
+*.csv
+*.csv.gz
+*.sqlite
+*.sqlite-*
+*.zip
+*.gz

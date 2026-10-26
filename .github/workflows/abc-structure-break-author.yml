@@ -1,0 +1,29 @@
+name: ABC Structure Break v1 - manual offline tests
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: abc-structure-break-v1-offline-tests
+  cancel-in-progress: false
+defaults:
+  run:
+    working-directory: research/abc_structure_break_v1
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-abc-author.txt
+      - name: Synthetic unit tests - Telegram transport is mocked
+        run: python -m unittest discover -s tests_author -v
+      - name: Telegram dry run - no send flag or secrets
+        run: python -m abc_author.notify test-message
