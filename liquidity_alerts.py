@@ -198,6 +198,7 @@ def format_alert(event, digits):
 
 
 def load_state():
+    save_state(state)
     if not STATE_PATH.exists():
         return {}
     return json.loads(STATE_PATH.read_text(encoding="utf-8"))
