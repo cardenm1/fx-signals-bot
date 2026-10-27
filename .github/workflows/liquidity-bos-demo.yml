@@ -1,11 +1,11 @@
-
 name: Liquidity BOS DEMO
 
 on:
   workflow_dispatch:
   schedule:
-  - cron: `*/5 * * * *`
-  permissions:
+    - cron: '*/5 * * * *'
+
+permissions:
   contents: read
 
 concurrency:
