@@ -12,13 +12,14 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 import dukascopy_python as duka
+from dukascopy_python import instruments
 from telegram import Bot
 
 PAIRS = {
     "USD/CAD": ("INSTRUMENT_FX_MAJORS_USD_CAD", 5),
-    "NZD/CHF": ("INSTRUMENT_FX_MAJORS_NZD_CHF", 5),
+    "NZD/CHF": ("INSTRUMENT_FX_CROSSES_NZD_CHF", 5),
     "GBP/USD": ("INSTRUMENT_FX_MAJORS_GBP_USD", 5),
-    "EUR/JPY": ("INSTRUMENT_FX_MAJORS_EUR_JPY", 3),
+    "EUR/JPY": ("INSTRUMENT_FX_CROSSES_EUR_JPY", 3),
 }
 STATE_PATH = Path(os.getenv("LIQUIDITY_STATE_PATH", "liquidity_alert_state.json"))
 LOOKBACK_DAYS = 35
@@ -28,7 +29,7 @@ LOG = logging.getLogger("liquidity_alerts")
 
 
 def fetch_m1(instrument_name):
-    instrument = getattr(duka, instrument_name)
+    instrument = getattr(instruments, instrument_name)
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=LOOKBACK_DAYS)
     data = duka.fetch(instrument=instrument, interval=duka.INTERVAL_MIN_1,
