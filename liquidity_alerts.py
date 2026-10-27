@@ -28,7 +28,7 @@ LOG = logging.getLogger("liquidity_alerts")
 
 
 def fetch_m1(instrument_name):
-    instrument = getattr(duka.instruments, instrument_name)
+    instrument = getattr(duka, instrument_name)
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=LOOKBACK_DAYS)
     data = duka.fetch(instrument=instrument, interval=duka.INTERVAL_MIN_1,
