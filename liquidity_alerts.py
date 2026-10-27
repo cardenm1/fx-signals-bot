@@ -198,7 +198,6 @@ def format_alert(event, digits):
 
 
 def load_state():
-    save_state(state)
     if not STATE_PATH.exists():
         return {}
     return json.loads(STATE_PATH.read_text(encoding="utf-8"))
@@ -216,6 +215,7 @@ async def main():
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
     state = load_state()
+    save_state(state)
     bot = Bot(token=token)
     for pair, (instrument, digits) in PAIRS.items():
         try:
