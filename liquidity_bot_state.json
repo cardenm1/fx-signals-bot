@@ -1,5 +1,5 @@
 {
-  "offset": 458826138,
+  "offset": 458826139,
   "levels": {
     "GBPUSD:1.33406": {
       "pair": "GBPUSD",
@@ -10,6 +10,11 @@
       "pair": "USDCAD",
       "level": 1.39683,
       "created": "2026-10-28T22:14:14.366312+00:00"
+    },
+    "NZDCHF:0.46744": {
+      "pair": "NZDCHF",
+      "level": 0.46744,
+      "created": "2026-10-28T22:14:15.813893+00:00"
     }
   },
   "setups": {},
