@@ -8,7 +8,9 @@
     }
   },
   "setups": {},
-  "last_bar": {},
+  "last_bar": {
+    "GBPUSD": "2026-10-28T20:59:00+00:00"
+  },
   "sent": [],
   "errors": {}
 }
