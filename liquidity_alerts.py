@@ -4,37 +4,23 @@ import json
 import asyncio
 import logging
 from pathlib import Path
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import pandas as pd
-import dukascopy_python as duka
+from liquidity_feed import fetch_m1, PAIRS
 from telegram import Bot
 
-TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-CHAT_ID = str(os.environ["TELEGRAM_CHAT_ID"])
-STATE_FILE = Path("liquidity_bot_state.json")
+TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+STATE_FILE = Path(os.environ.get("LIQUIDITY_STATE_FILE", "liquidity_bot_state.json"))
 
-LOOKBACK_HOURS = 48
 MAX_WAIT_MINUTES = 120
 PIVOT_RADIUS = 2
 
-# Поддерживаемые валютные пары
-PAIRS = {
-    "GBPUSD": "INSTRUMENT_FX_MAJORS_GBP_USD",
-    "EURUSD": "INSTRUMENT_FX_MAJORS_EUR_USD",
-    "USDJPY": "INSTRUMENT_FX_MAJORS_USD_JPY",
-    "USDCHF": "INSTRUMENT_FX_MAJORS_USD_CHF",
-    "USDCAD": "INSTRUMENT_FX_MAJORS_USD_CAD",
-    "AUDUSD": "INSTRUMENT_FX_MAJORS_AUD_USD",
-    "NZDUSD": "INSTRUMENT_FX_MAJORS_NZD_USD",
-    "GBPJPY": "INSTRUMENT_FX_CROSSES_GBP_JPY",
-    "EURJPY": "INSTRUMENT_FX_CROSSES_EUR_JPY",
-    "EURGBP": "INSTRUMENT_FX_CROSSES_EUR_GBP",
-    "NZDCHF": "INSTRUMENT_FX_CROSSES_NZD_CHF",
-}
-
 logging.basicConfig(level=logging.INFO)
 LOG = logging.getLogger("liquidity_bot")
+# httpx INFO includes Telegram request URLs containing the bot token.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 def load_state():
@@ -42,9 +28,19 @@ def load_state():
         try:
             data = json.loads(STATE_FILE.read_text())
             if isinstance(data, dict):
+                for key, kind in (("offset", int), ("levels", dict), ("setups", dict), ("last_bar", dict), ("sent", list)):
+                    if not isinstance(data.get(key), kind):
+                        raise ValueError(f"Invalid state field: {key}")
+                for key, item in data["levels"].items():
+                    if (not isinstance(item, dict) or item.get("pair") not in PAIRS
+                            or not isinstance(item.get("level"), (int, float))
+                            or not 0 < item["level"] < 1000
+                            or pd.Timestamp(item.get("created")).tzinfo is None):
+                        raise ValueError(f"Invalid level: {key}")
                 return data
-        except (OSError, ValueError):
-            LOG.exception("Cannot read state")
+        except (OSError, ValueError) as exc:
+            raise RuntimeError("Cannot read state; refusing to reset levels") from exc
+        raise ValueError("Invalid state object")
     return {
         "offset": 0,
         "levels": {},
@@ -58,6 +54,9 @@ def save_state(state):
     temporary = STATE_FILE.with_suffix(".tmp")
     temporary.write_text(json.dumps(state, indent=2))
     temporary.replace(STATE_FILE)
+    if os.environ.get("LIQUIDITY_REMOTE_STATE") == "1":
+        from liquidity_state import persist
+        persist(STATE_FILE.parent)
 
 
 def normalize_pair(value):
@@ -73,6 +72,11 @@ async def send(bot, message):
 
 
 async def handle_commands(bot, state):
+    async def send(bot, message):
+        # Persist command effects and Telegram offset before replying.
+        save_state(state)
+        await globals()["send"](bot, message)
+
     updates = await bot.get_updates(
         offset=state.get("offset", 0),
         timeout=0,
@@ -97,6 +101,9 @@ async def handle_commands(bot, state):
         if not parts:
             continue
 
+        target = parts[0].partition("@")[2]
+        if target and target.lower() != str(getattr(bot, "username", "")).lower():
+            continue
         command = parts[0].split("@")[0].lower()
 
         if command == "/add":
@@ -115,7 +122,7 @@ async def handle_commands(bot, state):
                 continue
 
             try:
-                level = float(parts[2])
+                level = round(float(parts[2]), decimals(pair))
                 if not 0 < level < 1000:
                     raise ValueError
             except ValueError:
@@ -123,6 +130,10 @@ async def handle_commands(bot, state):
                 continue
 
             key = f"{pair}:{level:.{decimals(pair)}f}"
+
+            if key in state["levels"]:
+                await send(bot, f"Уровень уже существует: {key}")
+                continue
 
             state["levels"][key] = {
                 "pair": pair,
@@ -146,7 +157,9 @@ async def handle_commands(bot, state):
             pair = normalize_pair(parts[1])
 
             try:
-                level = float(parts[2])
+                level = round(float(parts[2]), decimals(pair))
+                if pair not in PAIRS or not 0 < level < 1000:
+                    raise ValueError
             except ValueError:
                 await send(bot, "Неверная цена.")
                 continue
@@ -185,47 +198,12 @@ async def handle_commands(bot, state):
                 bot,
                 "Бот работает.\n"
                 f"Активных уровней: {len(state['levels'])}\n"
-                "Проверка: GitHub Actions, примерно каждые 5 минут.",
+                "Проверка: GitHub Actions, примерно каждые 5 минут; возможны задержки.\n"
+                f"Последние свечи UTC: {state['last_bar']}\n"
+                f"Ошибки: {state.get('errors', {})}",
             )
 
     save_state(state)
-
-
-def fetch_m1(pair):
-    instrument = getattr(duka.instruments, PAIRS[pair])
-
-    end = datetime.now(timezone.utc)
-    start = end - timedelta(hours=LOOKBACK_HOURS)
-
-    df = duka.fetch(
-        instrument=instrument,
-        interval=duka.INTERVAL_MIN_1,
-        offer_side=duka.OFFER_SIDE_BID,
-        start=start,
-        end=end,
-    )
-
-    if df is None or df.empty:
-        raise ValueError("No market data")
-
-    df = df.copy()
-    df.columns = [str(c).lower() for c in df.columns]
-
-    if "timestamp" in df.columns:
-        df = df.set_index("timestamp")
-
-    df.index = pd.to_datetime(df.index, utc=True)
-    df = df.sort_index()
-    df = df[~df.index.duplicated(keep="last")]
-
-    for column in ("open", "high", "low", "close"):
-        df[column] = pd.to_numeric(df[column], errors="coerce")
-
-    df = df.dropna(subset=["open", "high", "low", "close"])
-
-    # Исключаем незакрытую минутную свечу
-    cutoff = pd.Timestamp.now(tz="UTC").floor("min")
-    return df[df.index < cutoff]
 
 
 def make_m5(m1):
@@ -250,18 +228,22 @@ def last_confirmed_pivots(frame, index):
     lows = []
 
     # Pivot должен быть подтверждён до текущей свечи.
-    for j in range(radius, index - radius):
+    for j in range(index - radius - 1, radius - 1, -1):
         window = frame.iloc[j - radius:j + radius + 1]
         high = float(frame.iloc[j]["high"])
         low = float(frame.iloc[j]["low"])
 
         if high == window["high"].max():
             if (window["high"] == high).sum() == 1:
-                highs.append(high)
+                if not highs:
+                    highs.append(high)
 
         if low == window["low"].min():
             if (window["low"] == low).sum() == 1:
-                lows.append(low)
+                if not lows:
+                    lows.append(low)
+        if highs and lows:
+            break
 
     return (
         highs[-1] if highs else None,
@@ -272,6 +254,17 @@ def last_confirmed_pivots(frame, index):
 def bos_at(frame, index):
     if index < 2 * PIVOT_RADIUS + 2:
         return None
+
+    # Never infer structure across missing market minutes.
+    expected = frame.index.to_series().diff().dropna().min()
+    if not (frame.index[:index + 1].to_series().diff().dropna() == expected).all():
+        # Restrict the search to the continuous segment after the last gap.
+        gaps = frame.index[:index + 1].to_series().diff() != expected
+        start = int(__import__("numpy").flatnonzero(gaps.to_numpy())[-1])
+        frame = frame.iloc[start:index + 1]
+        index = len(frame) - 1
+        if index < 2 * PIVOT_RADIUS + 2:
+            return None
 
     previous = float(frame.iloc[index - 1]["close"])
     current = float(frame.iloc[index]["close"])
@@ -292,13 +285,13 @@ async def analyze_pair(bot, state, pair):
 
     if len(m1) < 20:
         LOG.warning("%s: insufficient data", pair)
-        return
+        raise ValueError(f"{pair}: insufficient data")
 
     now = pd.Timestamp.now(tz="UTC")
 
     if (now - m1.index[-1]).total_seconds() > 600:
         LOG.warning("%s: stale market data", pair)
-        return
+        raise ValueError(f"{pair}: stale market data")
 
     m5 = make_m5(m1)
 
@@ -314,6 +307,11 @@ async def analyze_pair(bot, state, pair):
 
     # Не восстанавливаем старые события после длительного простоя.
     recent = recent[recent.index >= now - pd.Timedelta(minutes=15)]
+
+    if previous_bar and last_seen < now - pd.Timedelta(minutes=15):
+        for key in list(state["setups"]):
+            if state["levels"].get(key, {}).get("pair") == pair:
+                state["setups"].pop(key)
 
     pair_levels = {
         key: value
@@ -336,7 +334,7 @@ async def analyze_pair(bot, state, pair):
 
             # Не анализируем свечи до добавления уровня.
             created = pd.Timestamp(item["created"])
-            if timestamp < created.floor("min"):
+            if timestamp < created.ceil("min"):
                 continue
 
             setup = state["setups"].get(key)
@@ -349,6 +347,10 @@ async def analyze_pair(bot, state, pair):
                 ):
                     state["setups"].pop(key, None)
                     setup = None
+
+            if timestamp - m1.index[position - 1] != pd.Timedelta(minutes=1):
+                state["setups"].pop(key, None)
+                continue
 
             if setup is None:
                 upper = (
@@ -391,12 +393,8 @@ async def analyze_pair(bot, state, pair):
                 if idx < 1:
                     continue
 
-                bar_time = frame.index[idx]
-                close_time = bar_time + pd.Timedelta(
-                    minutes=1 if tf == "M1" else 5
-                )
-
-                if close_time <= started:
+                # OHLC cannot establish sweep/BOS order inside one bar.
+                if frame.index[idx] <= started:
                     continue
 
                 direction = bos_at(frame, idx)
@@ -419,6 +417,12 @@ async def analyze_pair(bot, state, pair):
 
                 price = float(frame.iloc[idx]["close"])
 
+                # Durable intent BEFORE Telegram: ambiguous timeouts are not retried.
+                sent.add(signal_id)
+                state["sent"] = sorted(sent)
+                setup["sent_tf"].append(tf)
+                save_state(state)
+
                 await send(
                     bot,
                     f"LIQUIDITY + BOS\n\n"
@@ -432,11 +436,10 @@ async def analyze_pair(bot, state, pair):
                     f"Демо-сигнал. Не является приказом на вход.",
                 )
 
-                sent.add(signal_id)
-                setup["sent_tf"].append(tf)
 
     state["last_bar"][pair] = m1.index[-1].isoformat()
     state["sent"] = sorted(sent)[-1000:]
+    state.setdefault("errors", {}).pop(pair, None)
 
 
 async def main():
@@ -461,12 +464,16 @@ async def main():
         for pair in pairs:
             try:
                 await analyze_pair(bot, state, pair)
-            except Exception:
+            except Exception as exc:
+                state.setdefault("errors", {})[pair] = type(exc).__name__
                 LOG.exception("Error processing %s", pair)
             finally:
                 save_state(state)
 
+    state["errors"] = {p: e for p, e in state.get("errors", {}).items() if p in pairs}
     save_state(state)
+    if state.get("errors"):
+        raise RuntimeError("One or more pairs failed; see logs and /status")
 
 
 if __name__ == "__main__":
