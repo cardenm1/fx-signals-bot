@@ -19,6 +19,8 @@ PIVOT_RADIUS = 2
 
 logging.basicConfig(level=logging.INFO)
 LOG = logging.getLogger("liquidity_bot")
+# httpx INFO includes Telegram request URLs containing the bot token.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 def load_state():
