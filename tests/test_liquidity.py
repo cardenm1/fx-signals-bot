@@ -206,7 +206,7 @@ class Tests(unittest.TestCase):
     def test_both_sides_swept_is_ambiguous(self):
         f=self.frame(); self.level(f)
         f.loc[f.index[-1], ['high','low']]=[1.3,.8]
-        f.loc[f.index[-2], ['high','low']]=[1.1,1.25]
+        f.loc[f.index[-2], ['high','low']]=[1.2,1.2]
         with patch.object(bot,'fetch_m1',return_value=f):
             asyncio.run(bot.analyze_pair(self.api,self.state,'GBPUSD'))
         self.assertFalse(self.state['setups'])
