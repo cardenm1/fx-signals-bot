@@ -1,5 +1,5 @@
 {
-  "offset": 458826143,
+  "offset": 458826144,
   "levels": {
     "GBPUSD:1.33406": {
       "pair": "GBPUSD",
@@ -20,6 +20,11 @@
       "pair": "EURJPY",
       "level": 175.105,
       "created": "2026-10-28T22:14:18.701097+00:00"
+    },
+    "GBPUSD:1.32887": {
+      "pair": "GBPUSD",
+      "level": 1.32887,
+      "created": "2026-10-29T10:16:51.783767+00:00"
     }
   },
   "setups": {},
