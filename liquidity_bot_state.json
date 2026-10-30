@@ -73,6 +73,7 @@
   ],
   "errors": {
     "EURJPY": "ValueError",
-    "GBPUSD": "ValueError"
+    "GBPUSD": "ValueError",
+    "NZDCHF": "ValueError"
   }
 }
