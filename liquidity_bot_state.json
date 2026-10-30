@@ -71,5 +71,7 @@
     "USDCAD:1.39683:2026-10-30T07:19:00+00:00:M1:SELL",
     "USDCAD:1.39683:2026-10-30T07:19:00+00:00:M5:SELL"
   ],
-  "errors": {}
+  "errors": {
+    "EURJPY": "ValueError"
+  }
 }
