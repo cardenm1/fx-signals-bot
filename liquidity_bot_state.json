@@ -1,5 +1,5 @@
 {
-  "offset": 458826150,
+  "offset": 458826151,
   "levels": {
     "GBPUSD:1.33406": {
       "pair": "GBPUSD",
@@ -40,6 +40,11 @@
       "pair": "USDCAD",
       "level": 1.39367,
       "created": "2026-10-30T13:22:57.711532+00:00"
+    },
+    "GBPUSD:1.33538": {
+      "pair": "GBPUSD",
+      "level": 1.33538,
+      "created": "2026-10-30T15:18:52.833386+00:00"
     }
   },
   "setups": {},
