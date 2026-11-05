@@ -1,5 +1,5 @@
 {
-  "offset": 458826161,
+  "offset": 458826162,
   "levels": {
     "GBPUSD:1.33406": {
       "pair": "GBPUSD",
@@ -54,6 +54,12 @@
       "level": 1.33984,
       "created": "2026-10-30T16:09:12.686089+00:00",
       "status": "completed"
+    },
+    "GBPUSD:1.33000": {
+      "pair": "GBPUSD",
+      "level": 1.33,
+      "created": "2026-11-05T22:52:00.706600+00:00",
+      "status": "watching"
     }
   },
   "setups": {},
