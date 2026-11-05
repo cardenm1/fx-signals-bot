@@ -40,7 +40,7 @@ class Tests(unittest.TestCase):
 
     def level(self, frame):
         self.state['levels']['GBPUSD:1.20000'] = dict(pair='GBPUSD', level=1.2,
-             created=(frame.index[0] - pd.Timedelta(minutes=1)).isoformat())
+             created=(frame.index[0] - pd.Timedelta(minutes=1)).isoformat(), status="watching")
         self.state['last_bar']['GBPUSD'] = frame.index[-4].isoformat()
 
     def test_commands_and_reload(self):
@@ -97,10 +97,10 @@ class Tests(unittest.TestCase):
         self.state['last_bar']['GBPUSD'] = f.index[-9].isoformat()
         with patch.object(bot, 'fetch_m1', return_value=f), patch.object(bot, 'bos_at', return_value='BUY'):
             asyncio.run(bot.analyze_pair(self.api, self.state, 'GBPUSD'))
-            self.assertEqual(self.api.send_message.await_count, 2)  # M1 + closed M5
+            self.assertEqual(self.api.send_message.await_count, 1)  # M1 only
             self.state = bot.load_state()
             asyncio.run(bot.analyze_pair(self.api, self.state, 'GBPUSD'))
-            self.assertEqual(self.api.send_message.await_count, 2)
+            self.assertEqual(self.api.send_message.await_count, 1)
 
     def test_no_bos_on_sweep_bar(self):
         f = self.frame(); self.level(f)
@@ -121,8 +121,11 @@ class Tests(unittest.TestCase):
         with patch.object(bot, 'fetch_m1', return_value=f), patch.object(bot, 'bos_at', return_value='BUY'):
             with self.assertRaises(TimeoutError): asyncio.run(bot.analyze_pair(self.api, self.state, 'GBPUSD'))
             restored = bot.load_state()
-            self.assertEqual(len(restored['sent']), 1)
-            self.assertIn('M1', restored['setups']['GBPUSD:1.20000']['sent_tf'])
+            self.assertEqual(restored["levels"]["GBPUSD:1.20000"]["status"], "completed")
+            self.assertEqual(restored["levels"]["GBPUSD:1.20000"]["signal"]["delivery"], "unknown")
+            self.api.send_message.side_effect = None
+            asyncio.run(bot.analyze_pair(self.api, restored, "GBPUSD"))
+            self.assertEqual(self.api.send_message.await_count, 1)
 
     def test_remote_checkpoint_failure_prevents_send(self):
         f = self.frame(); self.level(f); f.loc[f.index[-3], 'high'] = 1.3
@@ -132,7 +135,8 @@ class Tests(unittest.TestCase):
 
     def test_expired_setup(self):
         f = self.frame(); self.level(f)
-        self.state['setups']['GBPUSD:1.20000'] = dict(time=(f.index[-1]-pd.Timedelta(hours=3)).isoformat(), direction='UP', sent_tf=[])
+        self.state['setups']['GBPUSD:1.20000'] = dict(time=(f.index[-1]-pd.Timedelta(hours=3)).isoformat(), direction='UP', returned=False)
+        self.state['levels']['GBPUSD:1.20000']['status'] = 'waiting_bos'
         with patch.object(bot, 'fetch_m1', return_value=f): asyncio.run(bot.analyze_pair(self.api, self.state, 'GBPUSD'))
         self.assertFalse(self.state['setups'])
 
@@ -195,7 +199,7 @@ class Tests(unittest.TestCase):
         f.iloc[-10:, f.columns.get_loc('high')] = [1.1,1.2,1.3,1.2,1.1,1.2,1.31,1.4,1.4,1.4]
         f.iloc[-10:, f.columns.get_loc('close')] = [1.,1.,1.1,1.,1.,1.,1.1,1.35,1.35,1.35]
         self.level(f)
-        self.state['levels'] = {'GBPUSD:1.30000':dict(pair='GBPUSD',level=1.3,created=f.index[0].isoformat())}
+        self.state['levels'] = {'GBPUSD:1.30000':dict(pair='GBPUSD',level=1.3,created=f.index[0].isoformat(),status='watching')}
         self.state['last_bar']['GBPUSD'] = f.index[-5].isoformat()
         with patch.object(bot, 'fetch_m1', return_value=f):
             asyncio.run(bot.analyze_pair(self.api,self.state,'GBPUSD'))
@@ -206,7 +210,7 @@ class Tests(unittest.TestCase):
     def test_both_sides_swept_is_ambiguous(self):
         f=self.frame(); self.level(f)
         f.loc[f.index[-1], ['high','low']]=[1.3,.8]
-        f.loc[f.index[-2], ['high','low']]=[1.2,1.2]
+        f.loc[f.index[-2], ['open','high','low','close']]=[1.2,1.2,1.2,1.2]
         with patch.object(bot,'fetch_m1',return_value=f):
             asyncio.run(bot.analyze_pair(self.api,self.state,'GBPUSD'))
         self.assertFalse(self.state['setups'])
@@ -218,3 +222,4 @@ class Tests(unittest.TestCase):
         self.assertEqual(len(feed.PAIRS),11)
 
 if __name__ == '__main__': unittest.main()
+
