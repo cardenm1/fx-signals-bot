@@ -1,50 +1,59 @@
 {
-  "offset": 458826160,
+  "offset": 458826161,
   "levels": {
     "GBPUSD:1.33406": {
       "pair": "GBPUSD",
       "level": 1.33406,
-      "created": "2026-10-28T22:14:12.846859+00:00"
+      "created": "2026-10-28T22:14:12.846859+00:00",
+      "status": "incomplete_history"
     },
     "NZDCHF:0.46744": {
       "pair": "NZDCHF",
       "level": 0.46744,
-      "created": "2026-10-28T22:14:15.813893+00:00"
+      "created": "2026-10-28T22:14:15.813893+00:00",
+      "status": "incomplete_history"
     },
     "EURJPY:175.105": {
       "pair": "EURJPY",
       "level": 175.105,
-      "created": "2026-10-28T22:14:18.701097+00:00"
+      "created": "2026-10-28T22:14:18.701097+00:00",
+      "status": "incomplete_history"
     },
     "GBPUSD:1.32887": {
       "pair": "GBPUSD",
       "level": 1.32887,
-      "created": "2026-10-29T10:16:51.783767+00:00"
+      "created": "2026-10-29T10:16:51.783767+00:00",
+      "status": "incomplete_history"
     },
     "GBPUSD:1.33385": {
       "pair": "GBPUSD",
       "level": 1.33385,
-      "created": "2026-10-29T11:05:29.116223+00:00"
+      "created": "2026-10-29T11:05:29.116223+00:00",
+      "status": "incomplete_history"
     },
     "USDCAD:1.39367": {
       "pair": "USDCAD",
       "level": 1.39367,
-      "created": "2026-10-30T13:22:57.711532+00:00"
+      "created": "2026-10-30T13:22:57.711532+00:00",
+      "status": "incomplete_history"
     },
     "GBPUSD:1.33538": {
       "pair": "GBPUSD",
       "level": 1.33538,
-      "created": "2026-10-30T15:18:52.833386+00:00"
+      "created": "2026-10-30T15:18:52.833386+00:00",
+      "status": "incomplete_history"
     },
     "USDCAD:1.33913": {
       "pair": "USDCAD",
       "level": 1.33913,
-      "created": "2026-10-30T15:18:54.370161+00:00"
+      "created": "2026-10-30T15:18:54.370161+00:00",
+      "status": "incomplete_history"
     },
     "GBPUSD:1.33984": {
       "pair": "GBPUSD",
       "level": 1.33984,
-      "created": "2026-10-30T16:09:12.686089+00:00"
+      "created": "2026-10-30T16:09:12.686089+00:00",
+      "status": "completed"
     }
   },
   "setups": {},
