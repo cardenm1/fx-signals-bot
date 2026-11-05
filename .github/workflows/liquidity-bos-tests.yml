@@ -1,0 +1,28 @@
+name: Liquidity BOS offline tests
+
+"on":
+  pull_request:
+    paths:
+      - 'liquidity_*.py'
+      - 'tests/test_liquidity*.py'
+      - 'requirements-liquidity.txt'
+      - '.github/workflows/liquidity-bos*.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-liquidity.txt
+      - name: Offline tests without market access or Telegram secrets
+        run: python -m unittest discover -s tests -p 'test_liquidity*.py' -v

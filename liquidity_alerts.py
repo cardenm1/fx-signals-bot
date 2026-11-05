@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from datetime import datetime, timezone
 
+import numpy as np
 import pandas as pd
 from liquidity_feed import fetch_m1, PAIRS
 from telegram import Bot
@@ -37,6 +38,7 @@ def load_state():
                             or not 0 < item["level"] < 1000
                             or pd.Timestamp(item.get("created")).tzinfo is None):
                         raise ValueError(f"Invalid level: {key}")
+                migrate_state(data)
                 return data
         except (OSError, ValueError) as exc:
             raise RuntimeError("Cannot read state; refusing to reset levels") from exc
@@ -48,6 +50,28 @@ def load_state():
         "last_bar": {},
         "sent": [],
     }
+
+
+def migrate_state(state):
+    """Never rearm a level that may already have published under the old schema."""
+    for key, item in state["levels"].items():
+        setup = state["setups"].get(key, {})
+        if "status" not in item:
+            published = setup.get("sent_tf") or any(
+                signal.startswith(key + ":") for signal in state["sent"])
+            # Absence from the legacy bounded sent list does not prove a level
+            # never signalled. Keep unverifiable registrations blocked.
+            item["status"] = "completed" if published else "incomplete_history"
+            state["setups"].pop(key, None)
+        if item["status"] not in {
+            "watching", "waiting_bos", "completed", "expired", "incomplete_history"
+        }:
+            raise ValueError("Invalid level status")
+        if item["status"] == "waiting_bos":
+            if (setup.get("direction") not in {"UP", "DOWN"}
+                    or not isinstance(setup.get("returned"), bool)
+                    or pd.Timestamp(setup.get("time")).tzinfo is None):
+                raise ValueError("Invalid pending setup")
 
 
 def save_state(state):
@@ -65,6 +89,23 @@ def normalize_pair(value):
 
 def decimals(pair):
     return 3 if pair.endswith("JPY") else 5
+
+
+def level_description(item):
+    labels = {
+        "watching": "ожидание выхода за уровень",
+        "waiting_bos": "ожидание BOS M1",
+        "completed": "завершён",
+        "expired": "срок ожидания истёк",
+        "incomplete_history": "заблокирован: неполная история",
+    }
+    delivery = {"reserved": "результат отправки неизвестен",
+                "unknown": "ошибка отправки, повтор отключён",
+                "confirmed": "Telegram подтвердил получение"}
+    text = labels[item["status"]]
+    if "signal" in item:
+        text += "; " + delivery[item["signal"]["delivery"]]
+    return text
 
 
 async def send(bot, message):
@@ -139,6 +180,7 @@ async def handle_commands(bot, state):
                 "pair": pair,
                 "level": level,
                 "created": datetime.now(timezone.utc).isoformat(),
+                "status": "watching",
             }
 
             state["setups"].pop(key, None)
@@ -179,8 +221,10 @@ async def handle_commands(bot, state):
             else:
                 await send(
                     bot,
-                    "Активные уровни:\n"
-                    + "\n".join(sorted(state["levels"])),
+                    "Уровни и состояния:\n"
+                    + "\n".join(
+                        f"{key} — {level_description(item)}"
+                        for key, item in sorted(state["levels"].items())),
                 )
 
         elif command in ("/start", "/help"):
@@ -190,15 +234,18 @@ async def handle_commands(bot, state):
                 "/add GBPUSD 1.34500\n"
                 "/remove GBPUSD 1.34500\n"
                 "/list\n"
-                "/status",
+                "/status\n"
+                "Повторное наблюдение: /remove, затем /add.",
             )
 
         elif command == "/status":
             await send(
                 bot,
                 "Бот работает.\n"
-                f"Активных уровней: {len(state['levels'])}\n"
-                "Проверка: GitHub Actions, примерно каждые 5 минут; возможны задержки.\n"
+                f"Активных уровней: {sum(item.get('status') in {'watching', 'waiting_bos'} for item in state['levels'].values())}\n"
+                + "\n".join(f"{key} — {level_description(item)}"
+                            for key, item in sorted(state["levels"].items()))
+                + "\nПроверка: GitHub Actions, примерно каждые 5 минут; возможны задержки.\n"
                 f"Последние свечи UTC: {state['last_bar']}\n"
                 f"Ошибки: {state.get('errors', {})}",
             )
@@ -256,15 +303,13 @@ def bos_at(frame, index):
         return None
 
     # Never infer structure across missing market minutes.
-    expected = frame.index.to_series().diff().dropna().min()
-    if not (frame.index[:index + 1].to_series().diff().dropna() == expected).all():
-        # Restrict the search to the continuous segment after the last gap.
-        gaps = frame.index[:index + 1].to_series().diff() != expected
-        start = int(__import__("numpy").flatnonzero(gaps.to_numpy())[-1])
-        frame = frame.iloc[start:index + 1]
-        index = len(frame) - 1
-        if index < 2 * PIVOT_RADIUS + 2:
-            return None
+    expected = pd.Timedelta(minutes=1)
+    gaps = frame.index[:index + 1].to_series().diff() != expected
+    start = int(np.flatnonzero(gaps.to_numpy())[-1])
+    frame = frame.iloc[start:index + 1]
+    index = len(frame) - 1
+    if index < 2 * PIVOT_RADIUS + 2:
+        return None
 
     previous = float(frame.iloc[index - 1]["close"])
     current = float(frame.iloc[index]["close"])
@@ -280,165 +325,116 @@ def bos_at(frame, index):
     return None
 
 
+def validate_m1(frame, now):
+    """Reject malformed, partial, duplicated or out-of-order candles."""
+    if (not isinstance(frame.index, pd.DatetimeIndex) or frame.index.tz is None
+            or not frame.index.is_monotonic_increasing or frame.index.has_duplicates
+            or not (frame.index == frame.index.floor("min")).all()):
+        raise ValueError("Invalid M1 timestamps")
+    values = frame[["open", "high", "low", "close"]]
+    if (not np.isfinite(values.to_numpy()).all() or (values <= 0).any().any()
+            or (frame["high"] < values.max(axis=1)).any()
+            or (frame["low"] > values.min(axis=1)).any()
+            or (frame.index >= now.floor("min")).any()):
+        raise ValueError("Invalid or unclosed M1 candles")
+
+
+def finish_level(state, key, status):
+    state["levels"][key]["status"] = status
+    state["setups"].pop(key, None)
+
+
 async def analyze_pair(bot, state, pair):
+    migrate_state(state)
     m1 = fetch_m1(pair)
-
-    if len(m1) < 20:
-        LOG.warning("%s: insufficient data", pair)
-        raise ValueError(f"{pair}: insufficient data")
-
     now = pd.Timestamp.now(tz="UTC")
-
+    validate_m1(m1, now)
+    if len(m1) < 20:
+        raise ValueError(f"{pair}: insufficient data")
     if (now - m1.index[-1]).total_seconds() > 600:
-        LOG.warning("%s: stale market data", pair)
         raise ValueError(f"{pair}: stale market data")
 
-    m5 = make_m5(m1)
-
     previous_bar = state["last_bar"].get(pair)
+    last_seen = pd.Timestamp(previous_bar) if previous_bar else m1.index[-1]
+    if last_seen > m1.index[-1]:
+        raise ValueError(f"{pair}: market history moved backwards")
+    levels = {key: item for key, item in state["levels"].items()
+              if item["pair"] == pair and item["status"] in {"watching", "waiting_bos"}}
+    for key, item in levels.items():
+        # A missing checkpoint means we cannot prove the intervening history.
+        if (previous_bar and last_seen < m1.index[0]
+                and pd.Timestamp(item["created"]).ceil("min") <= m1.index[0]):
+            finish_level(state, key, "incomplete_history")
 
-    if previous_bar:
-        last_seen = pd.Timestamp(previous_bar)
-    else:
-        # При первом запуске не отправляем старые сигналы.
-        last_seen = m1.index[-1]
-
-    recent = m1[m1.index > last_seen]
-
-    # Не восстанавливаем старые события после длительного простоя.
-    recent = recent[recent.index >= now - pd.Timedelta(minutes=15)]
-
-    if previous_bar and last_seen < now - pd.Timedelta(minutes=15):
-        for key in list(state["setups"]):
-            if state["levels"].get(key, {}).get("pair") == pair:
-                state["setups"].pop(key)
-
-    pair_levels = {
-        key: value
-        for key, value in state["levels"].items()
-        if value["pair"] == pair
-    }
-
-    sent = set(state["sent"])
-
-    for timestamp, candle in recent.iterrows():
+    for timestamp, candle in m1[m1.index > last_seen].iterrows():
         position = m1.index.get_loc(timestamp)
-
-        if position == 0:
-            continue
-
-        previous = m1.iloc[position - 1]
-
-        for key, item in pair_levels.items():
+        for key, item in levels.items():
+            if item["status"] not in {"watching", "waiting_bos"}:
+                continue
+            if timestamp < pd.Timestamp(item["created"]).ceil("min"):
+                continue
+            if (position == 0 or timestamp - m1.index[position - 1]
+                    != pd.Timedelta(minutes=1)):
+                finish_level(state, key, "incomplete_history")
+                continue
+            previous = m1.iloc[position - 1]
             level = item["level"]
-
-            # Не анализируем свечи до добавления уровня.
-            created = pd.Timestamp(item["created"])
-            if timestamp < created.ceil("min"):
-                continue
-
             setup = state["setups"].get(key)
-
-            if setup:
-                started = pd.Timestamp(setup["time"])
-
-                if timestamp - started > pd.Timedelta(
-                    minutes=MAX_WAIT_MINUTES
-                ):
-                    state["setups"].pop(key, None)
-                    setup = None
-
-            if timestamp - m1.index[position - 1] != pd.Timedelta(minutes=1):
-                state["setups"].pop(key, None)
-                continue
-
             if setup is None:
-                upper = (
-                    previous["high"] <= level
-                    and candle["high"] > level
-                )
-                lower = (
-                    previous["low"] >= level
-                    and candle["low"] < level
-                )
-
+                upper = previous["high"] <= level < candle["high"]
+                lower = previous["low"] >= level > candle["low"]
                 if upper == lower:
                     continue
-
-                setup = {
-                    "time": timestamp.isoformat(),
-                    "direction": "UP" if upper else "DOWN",
-                    "sent_tf": [],
-                }
-
+                setup = {"time": timestamp.isoformat(),
+                         "direction": "UP" if upper else "DOWN", "returned": False}
                 state["setups"][key] = setup
+                item["status"] = "waiting_bos"
 
             started = pd.Timestamp(setup["time"])
-
-            for tf, frame in (("M1", m1), ("M5", m5)):
-                if tf in setup["sent_tf"]:
-                    continue
-
-                if tf == "M1":
-                    idx = position
-                else:
-                    candle_start = timestamp.floor("5min")
-                    # M5 можно проверять только после закрытия.
-                    if timestamp != candle_start + pd.Timedelta(minutes=4):
-                        continue
-                    if candle_start not in frame.index:
-                        continue
-                    idx = frame.index.get_loc(candle_start)
-
-                if idx < 1:
-                    continue
-
-                # OHLC cannot establish sweep/BOS order inside one bar.
-                if frame.index[idx] <= started:
-                    continue
-
-                direction = bos_at(frame, idx)
-
-                if direction is None:
-                    continue
-
-                continuation = (
-                    (setup["direction"] == "UP" and direction == "BUY")
-                    or
-                    (setup["direction"] == "DOWN" and direction == "SELL")
-                )
-
-                kind = "ПРОДОЛЖЕНИЕ" if continuation else "РАЗВОРОТ"
-
-                signal_id = f"{key}:{setup['time']}:{tf}:{direction}"
-
-                if signal_id in sent:
-                    continue
-
-                price = float(frame.iloc[idx]["close"])
-
-                # Durable intent BEFORE Telegram: ambiguous timeouts are not retried.
-                sent.add(signal_id)
-                state["sent"] = sorted(sent)
-                setup["sent_tf"].append(tf)
+            # Pending history must still be available and continuous, even after restart.
+            history = m1.loc[started:timestamp]
+            expected = pd.date_range(started, timestamp, freq="min")
+            if not history.index.equals(expected):
+                finish_level(state, key, "incomplete_history")
+                continue
+            if timestamp - started > pd.Timedelta(minutes=MAX_WAIT_MINUTES):
+                finish_level(state, key, "expired")
+                continue
+            returned = (candle["close"] < level if setup["direction"] == "UP"
+                        else candle["close"] > level)
+            setup["returned"] = setup["returned"] or bool(returned)
+            if timestamp <= started:
+                continue
+            direction = bos_at(m1, position)
+            if direction is None:
+                continue
+            continuation = ((setup["direction"] == "UP" and direction == "BUY")
+                            or (setup["direction"] == "DOWN" and direction == "SELL"))
+            kind = "ПРОДОЛЖЕНИЕ" if continuation else "РАЗВОРОТ"
+            event = ("снятие с возвратом за уровень" if setup["returned"]
+                     else "пробой без возврата")
+            # At most one attempt per registered level, persisted BEFORE Telegram.
+            # Ambiguous timeouts remain terminal, preventing duplicate delivery.
+            item["signal"] = {"time": timestamp.isoformat(), "direction": direction,
+                              "event": event, "delivery": "reserved"}
+            finish_level(state, key, "completed")
+            save_state(state)
+            try:
+                await send(bot, f"LIQUIDITY + BOS\n\n"
+                           f"Пара: {pair}\nУровень: {level:.{decimals(pair)}f}\n"
+                           f"Событие: {event}\nПробой: {setup['direction']}\n"
+                           f"BOS: M1\nСигнал: {direction}\nТип: {kind}\n"
+                           f"Цена BOS: {float(candle['close']):.{decimals(pair)}f}\n"
+                           f"Свеча BOS UTC: {timestamp.isoformat()}\n\n"
+                           "Демо-сигнал. Не является приказом на вход.")
+            except Exception:
+                item["signal"]["delivery"] = "unknown"
                 save_state(state)
-
-                await send(
-                    bot,
-                    f"LIQUIDITY + BOS\n\n"
-                    f"Пара: {pair}\n"
-                    f"Уровень: {level:.{decimals(pair)}f}\n"
-                    f"Пробой: {setup['direction']}\n"
-                    f"BOS: {tf}\n"
-                    f"Сигнал: {direction}\n"
-                    f"Тип: {kind}\n"
-                    f"Цена BOS: {price:.{decimals(pair)}f}\n\n"
-                    f"Демо-сигнал. Не является приказом на вход.",
-                )
-
+                raise
+            item["signal"]["delivery"] = "confirmed"
+            save_state(state)
 
     state["last_bar"][pair] = m1.index[-1].isoformat()
-    state["sent"] = sorted(sent)[-1000:]
     state.setdefault("errors", {}).pop(pair, None)
 
 
@@ -478,3 +474,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
