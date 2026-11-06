@@ -65,7 +65,13 @@
       "pair": "GBPUSD",
       "level": 1.34427,
       "created": "2026-11-05T22:52:02.216650+00:00",
-      "status": "watching"
+      "status": "completed",
+      "signal": {
+        "time": "2026-11-06T03:18:00+00:00",
+        "direction": "SELL",
+        "event": "\u043f\u0440\u043e\u0431\u043e\u0439 \u0431\u0435\u0437 \u0432\u043e\u0437\u0432\u0440\u0430\u0442\u0430",
+        "delivery": "reserved"
+      }
     }
   },
   "setups": {},
