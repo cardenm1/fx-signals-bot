@@ -130,6 +130,7 @@
     "EURJPY": "ValueError",
     "EURUSD": "ValueError",
     "GBPUSD": "ValueError",
-    "NZDCHF": "ValueError"
+    "NZDCHF": "ValueError",
+    "USDCAD": "ValueError"
   }
 }
